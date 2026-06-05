@@ -13,7 +13,6 @@ export async function OPTIONS() {
 
 export async function POST(req: NextRequest) {
   let key: string, machine_id: string
-
   try {
     ;({ key, machine_id } = await req.json())
   } catch {
@@ -41,5 +40,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ valid: false, error: 'License is registered to a different machine' }, { headers: CORS })
   }
 
-  return NextResponse.json({ valid: true }, { headers: CORS })
+  // Subscription expired
+  if (license.expires_at && new Date(license.expires_at) < new Date()) {
+    return NextResponse.json({
+      valid: false,
+      expired: true,
+      type: license.type,
+      expires_at: license.expires_at,
+    }, { headers: CORS })
+  }
+
+  return NextResponse.json({
+    valid: true,
+    type: license.type,
+    expires_at: license.expires_at ?? null,
+  }, { headers: CORS })
 }

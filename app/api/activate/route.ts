@@ -11,9 +11,14 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS })
 }
 
+function computeExpiresAt(type: string): Date | null {
+  if (type === 'yearly')  return new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+  if (type === 'monthly') return new Date(Date.now() +  30 * 24 * 60 * 60 * 1000)
+  return null
+}
+
 export async function POST(req: NextRequest) {
   let key: string, machine_id: string
-
   try {
     ;({ key, machine_id } = await req.json())
   } catch {
@@ -37,12 +42,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'This license key has been deactivated' }, { status: 403, headers: CORS })
   }
 
-  // Already activated on this exact machine — allow reinstalls
+  // Reinstall on same machine — return existing expiry
   if (license.machine_id === machine_id) {
-    return NextResponse.json({ success: true, message: 'Already activated on this machine' }, { headers: CORS })
+    return NextResponse.json({
+      success: true,
+      message: 'Already activated on this machine',
+      type: license.type,
+      expires_at: license.expires_at ?? null,
+    }, { headers: CORS })
   }
 
-  // Already activated on a different machine
+  // Already bound to a different machine
   if (license.machine_id && license.machine_id !== machine_id) {
     return NextResponse.json(
       { error: 'This key is already activated on another computer. Please purchase a new license.' },
@@ -50,12 +60,24 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // First activation — bind the key to this machine
+  // First activation
+  const expires_at = computeExpiresAt(license.type)
+
   await sql`
     UPDATE licenses
-    SET machine_id = ${machine_id}, activated_at = NOW()
+    SET machine_id = ${machine_id}, activated_at = NOW(), expires_at = ${expires_at}
     WHERE key = ${key}
   `
 
-  return NextResponse.json({ success: true, message: 'License activated successfully' }, { headers: CORS })
+  // Link this machine's installation record to the license
+  await sql`
+    UPDATE installations SET license_key = ${key} WHERE machine_id = ${machine_id}
+  `
+
+  return NextResponse.json({
+    success: true,
+    message: 'License activated successfully',
+    type: license.type,
+    expires_at: expires_at?.toISOString() ?? null,
+  }, { headers: CORS })
 }
