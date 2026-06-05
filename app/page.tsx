@@ -417,8 +417,8 @@ export default function AdminPage() {
                       <td className="px-5 py-3 font-mono text-xs text-blue-300">{l.key}</td>
                       <td className="px-5 py-3 text-gray-300">{l.customer_name ?? <span className="text-gray-600">—</span>}</td>
                       <td className="px-5 py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TYPE_STYLE[l.type] ?? ''}`}>
-                          {l.type.charAt(0).toUpperCase() + l.type.slice(1)}
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TYPE_STYLE[l.type ?? 'lifetime'] ?? ''}`}>
+                          {(l.type ?? 'lifetime').charAt(0).toUpperCase() + (l.type ?? 'lifetime').slice(1)}
                         </span>
                       </td>
                       <td className="px-5 py-3">{licenseStatusBadge(l)}</td>
