@@ -210,7 +210,7 @@ export default function AdminPage() {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
         <form onSubmit={handleLogin} className="bg-gray-900 p-8 rounded-2xl shadow-xl w-full max-w-sm space-y-4">
-          <h1 className="text-2xl font-bold text-white">BakeSmart License</h1>
+          <h1 className="text-2xl font-bold text-white">KodernetPOS License</h1>
           <p className="text-gray-400 text-sm">Admin panel — enter your secret to continue</p>
           <input type="password" value={secret} onChange={e => setSecret(e.target.value)} placeholder="Admin secret"
             className="w-full bg-gray-800 text-white rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500" autoFocus />
@@ -227,7 +227,7 @@ export default function AdminPage() {
     <div className="min-h-screen bg-gray-950 text-white p-6 space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">BakeSmart License Server</h1>
+        <h1 className="text-2xl font-bold">KodernetPOS License Server</h1>
         <button onClick={() => { sessionStorage.removeItem('admin_secret'); setAuthed(false); setSecret('') }}
           className="text-sm text-gray-400 hover:text-white transition-colors">Sign out</button>
       </div>
