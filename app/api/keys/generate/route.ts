@@ -8,7 +8,7 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type, x-admin-secret',
 }
 
-const VALID_TYPES = ['lifetime', 'yearly', 'monthly']
+const VALID_TYPES = ['lifetime', '1year', '6month']
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS })

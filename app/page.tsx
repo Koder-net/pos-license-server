@@ -32,7 +32,7 @@ interface License {
   id: number
   key: string
   machine_id: string | null
-  type: 'lifetime' | 'yearly' | 'monthly'
+  type: 'lifetime' | '1year' | '6month'
   activated_at: string | null
   expires_at: string | null
   is_active: boolean
@@ -45,8 +45,14 @@ interface License {
 
 const TYPE_STYLE: Record<string, string> = {
   lifetime: 'text-purple-400 bg-purple-900/40',
-  yearly:   'text-blue-400 bg-blue-900/40',
-  monthly:  'text-cyan-400 bg-cyan-900/40',
+  '1year':  'text-blue-400 bg-blue-900/40',
+  '6month': 'text-cyan-400 bg-cyan-900/40',
+}
+
+const TYPE_LABEL: Record<string, string> = {
+  lifetime: 'Lifetime',
+  '1year':  '1 Year',
+  '6month': '6 Month',
 }
 
 function isExpired(expiresAt: string | null) {
@@ -56,7 +62,7 @@ function isExpired(expiresAt: string | null) {
 function trialDaysLeft(startedAt: string | null): number | null {
   if (!startedAt) return null
   const elapsed = (Date.now() - new Date(startedAt).getTime()) / 86400000
-  return Math.max(0, 7 - Math.floor(elapsed))
+  return Math.max(0, 3 - Math.floor(elapsed))
 }
 
 function fmt(d: string | null) {
@@ -106,7 +112,7 @@ export default function AdminPage() {
 
   // Generate form
   const [genCount, setGenCount] = useState(1)
-  const [genType, setGenType] = useState<'lifetime' | 'yearly' | 'monthly'>('lifetime')
+  const [genType, setGenType] = useState<'lifetime' | '1year' | '6month'>('lifetime')
   const [genCustomer, setGenCustomer] = useState('')
   const [genNotes, setGenNotes] = useState('')
   const [genResult, setGenResult] = useState<string[]>([])
@@ -352,8 +358,8 @@ export default function AdminPage() {
                 <select value={genType} onChange={e => setGenType(e.target.value as typeof genType)}
                   className="bg-gray-800 text-white rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500">
                   <option value="lifetime">Lifetime</option>
-                  <option value="yearly">Yearly</option>
-                  <option value="monthly">Monthly</option>
+                  <option value="1year">1 Year (12 monthly installments)</option>
+                  <option value="6month">6 Month (6 monthly installments)</option>
                 </select>
               </div>
               <div>
@@ -418,7 +424,7 @@ export default function AdminPage() {
                       <td className="px-5 py-3 text-gray-300">{l.customer_name ?? <span className="text-gray-600">—</span>}</td>
                       <td className="px-5 py-3">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TYPE_STYLE[l.type ?? 'lifetime'] ?? ''}`}>
-                          {(l.type ?? 'lifetime').charAt(0).toUpperCase() + (l.type ?? 'lifetime').slice(1)}
+                          {TYPE_LABEL[l.type ?? 'lifetime'] ?? l.type}
                         </span>
                       </td>
                       <td className="px-5 py-3">{licenseStatusBadge(l)}</td>

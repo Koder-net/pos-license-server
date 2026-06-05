@@ -12,8 +12,8 @@ export async function OPTIONS() {
 }
 
 function computeExpiresAt(type: string): Date | null {
-  if (type === 'yearly')  return new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
-  if (type === 'monthly') return new Date(Date.now() +  30 * 24 * 60 * 60 * 1000)
+  if (type === '1year')  return new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+  if (type === '6month') return new Date(Date.now() + 180 * 24 * 60 * 60 * 1000)
   return null
 }
 
