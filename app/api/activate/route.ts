@@ -11,10 +11,12 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS })
 }
 
+const PLAN_TOTAL: Record<string, number> = { '6month': 6, '1year': 12 }
+
 function computeExpiresAt(type: string): Date | null {
-  if (type === '1year')  return new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
-  if (type === '6month') return new Date(Date.now() + 180 * 24 * 60 * 60 * 1000)
-  return null
+  // Installment plans: first 30-day window starts at activation
+  if (type === '6month' || type === '1year') return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+  return null // lifetime: never expires
 }
 
 export async function POST(req: NextRequest) {
@@ -62,10 +64,12 @@ export async function POST(req: NextRequest) {
 
   // First activation
   const expires_at = computeExpiresAt(license.type)
+  const installments_paid = PLAN_TOTAL[license.type] ? 1 : 0
 
   await sql`
     UPDATE licenses
-    SET machine_id = ${machine_id}, activated_at = NOW(), expires_at = ${expires_at}
+    SET machine_id = ${machine_id}, activated_at = NOW(),
+        expires_at = ${expires_at}, installments_paid = ${installments_paid}
     WHERE key = ${key}
   `
 

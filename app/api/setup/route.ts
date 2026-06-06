@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
     DO $$ BEGIN
       BEGIN ALTER TABLE licenses ADD COLUMN type VARCHAR(20) NOT NULL DEFAULT 'lifetime'; EXCEPTION WHEN duplicate_column THEN NULL; END;
       BEGIN ALTER TABLE licenses ADD COLUMN expires_at TIMESTAMPTZ; EXCEPTION WHEN duplicate_column THEN NULL; END;
+      BEGIN ALTER TABLE licenses ADD COLUMN installments_paid INT NOT NULL DEFAULT 0; EXCEPTION WHEN duplicate_column THEN NULL; END;
     END $$
   `
 

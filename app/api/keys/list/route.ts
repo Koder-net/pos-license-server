@@ -19,7 +19,8 @@ export async function GET(req: NextRequest) {
 
   const sql = getDb()
   const licenses = await sql`
-    SELECT id, key, machine_id, activated_at, is_active, customer_name, notes, created_at
+    SELECT id, key, machine_id, type, activated_at, expires_at, is_active,
+           customer_name, notes, created_at, installments_paid
     FROM licenses
     ORDER BY created_at DESC
   `

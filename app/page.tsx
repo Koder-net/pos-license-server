@@ -39,6 +39,7 @@ interface License {
   customer_name: string | null
   notes: string | null
   created_at: string
+  installments_paid: number
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -51,9 +52,11 @@ const TYPE_STYLE: Record<string, string> = {
 
 const TYPE_LABEL: Record<string, string> = {
   lifetime: 'Lifetime',
-  '1year':  '1 Year',
-  '6month': '6 Month',
+  '1year':  '1-Year Plan',
+  '6month': '6-Month Plan',
 }
+
+const PLAN_TOTAL: Record<string, number> = { '6month': 6, '1year': 12 }
 
 function isExpired(expiresAt: string | null) {
   return expiresAt && new Date(expiresAt) < new Date()
@@ -191,6 +194,27 @@ export default function AdminPage() {
       body: JSON.stringify({ key }),
     })
     fetchLicenses(secret)
+  }
+
+  const handleRecordPayment = async (l: License) => {
+    const total = PLAN_TOTAL[l.type]
+    const next = (l.installments_paid ?? 0) + 1
+    const msg = next >= total
+      ? `Record FINAL payment (${next}/${total}) for ${l.key}?\n\nThis will upgrade the license to LIFETIME.`
+      : `Record payment ${next}/${total} for ${l.key}?\n\nThis extends access by 30 days.`
+    if (!confirm(msg)) return
+    const res = await fetch('/api/keys/extend', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
+      body: JSON.stringify({ key: l.key }),
+    })
+    const data = await res.json()
+    if (res.ok) {
+      alert(data.message)
+      fetchLicenses(secret)
+    } else {
+      alert(data.error || 'Failed to record payment')
+    }
   }
 
   // ── Install stats
@@ -357,9 +381,9 @@ export default function AdminPage() {
                 <label className="text-xs text-gray-400 block mb-1">Type</label>
                 <select value={genType} onChange={e => setGenType(e.target.value as typeof genType)}
                   className="bg-gray-800 text-white rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="lifetime">Lifetime</option>
-                  <option value="1year">1 Year (12 monthly installments)</option>
-                  <option value="6month">6 Month (6 monthly installments)</option>
+                  <option value="lifetime">Lifetime (full payment upfront)</option>
+                  <option value="6month">6-Month Plan (6 monthly installments → Lifetime)</option>
+                  <option value="1year">1-Year Plan (12 monthly installments → Lifetime)</option>
                 </select>
               </div>
               <div>
@@ -414,6 +438,7 @@ export default function AdminPage() {
                     <th className="text-left px-5 py-3">Status</th>
                     <th className="text-left px-5 py-3">Activated</th>
                     <th className="text-left px-5 py-3">Expires</th>
+                    <th className="text-left px-5 py-3">Installments</th>
                     <th className="px-5 py-3"></th>
                   </tr>
                 </thead>
@@ -436,12 +461,34 @@ export default function AdminPage() {
                             ? <span className={isExpired(l.expires_at) ? 'text-orange-400' : 'text-gray-400'}>{fmt(l.expires_at)}</span>
                             : <span className="text-gray-600">On activation</span>}
                       </td>
-                      <td className="px-5 py-3">
-                        {l.is_active && (
-                          <button onClick={() => handleDeactivate(l.key)} className="text-xs text-red-400 hover:text-red-300 transition-colors">
-                            Deactivate
-                          </button>
+                      <td className="px-5 py-3 text-xs">
+                        {PLAN_TOTAL[l.type] ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-gray-300 font-medium">
+                              {l.installments_paid ?? 0} / {PLAN_TOTAL[l.type]} paid
+                            </span>
+                            <div className="w-24 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                              <div className="h-full bg-green-500 rounded-full" style={{ width: `${Math.min(100, ((l.installments_paid ?? 0) / PLAN_TOTAL[l.type]) * 100)}%` }} />
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-gray-600">—</span>
                         )}
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex flex-col gap-1.5 items-start">
+                          {l.is_active && PLAN_TOTAL[l.type] && l.machine_id && (
+                            <button onClick={() => handleRecordPayment(l)}
+                              className="text-xs text-green-400 hover:text-green-300 transition-colors font-medium whitespace-nowrap">
+                              + Record Payment
+                            </button>
+                          )}
+                          {l.is_active && (
+                            <button onClick={() => handleDeactivate(l.key)} className="text-xs text-red-400 hover:text-red-300 transition-colors">
+                              Deactivate
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
