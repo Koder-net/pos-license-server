@@ -1,29 +1,24 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { getDb } from '@/lib/db'
-
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, x-admin-secret',
-}
+import { isAuthorized } from '@/lib/auth'
+import { ok, unauthorized, preflight } from '@/lib/http'
 
 export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS })
+  return preflight()
 }
 
 export async function GET(req: NextRequest) {
-  const secret = req.headers.get('x-admin-secret')
-  if (secret !== process.env.ADMIN_SECRET) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: CORS })
-  }
+  if (!(await isAuthorized(req))) return unauthorized()
 
   const sql = getDb()
   const licenses = await sql`
-    SELECT id, key, machine_id, type, activated_at, expires_at, is_active,
-           customer_name, notes, created_at, installments_paid
-    FROM licenses
-    ORDER BY created_at DESC
+    SELECT l.id, l.key, l.machine_id, l.type, l.activated_at, l.expires_at, l.is_active,
+           l.customer_name, l.notes, l.created_at, l.installments_paid,
+           i.hostname, i.nickname, i.last_seen_at
+    FROM licenses l
+    LEFT JOIN installations i ON i.machine_id = l.machine_id
+    ORDER BY l.created_at DESC
   `
 
-  return NextResponse.json({ licenses }, { headers: CORS })
+  return ok({ licenses })
 }

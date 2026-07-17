@@ -1,24 +1,18 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { getDb } from '@/lib/db'
 import { generateLicenseKey } from '@/lib/keygen'
-
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, x-admin-secret',
-}
+import { isAuthorized } from '@/lib/auth'
+import { logAdminAction } from '@/lib/audit'
+import { ok, fail, unauthorized, preflight, clientIp } from '@/lib/http'
 
 const VALID_TYPES = ['lifetime', '1year', '6month']
 
 export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS })
+  return preflight()
 }
 
 export async function POST(req: NextRequest) {
-  const secret = req.headers.get('x-admin-secret')
-  if (secret !== process.env.ADMIN_SECRET) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: CORS })
-  }
+  if (!(await isAuthorized(req))) return unauthorized()
 
   let customer_name: string | undefined, notes: string | undefined,
     type = 'lifetime', count = 1
@@ -49,9 +43,16 @@ export async function POST(req: NextRequest) {
       } catch { key = generateLicenseKey() }
     }
     if (!inserted) {
-      return NextResponse.json({ error: 'Failed to generate unique key' }, { status: 500, headers: CORS })
+      return fail('Failed to generate unique key', 500)
     }
   }
 
-  return NextResponse.json({ success: true, keys }, { headers: CORS })
+  await logAdminAction(
+    'license_generate',
+    customer_name ?? null,
+    { count: keys.length, type, keys },
+    clientIp(req.headers)
+  )
+
+  return ok({ success: true, keys })
 }

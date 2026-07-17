@@ -8,6 +8,7 @@ export async function OPTIONS() {
   return preflight()
 }
 
+/** Reverse a deactivation (e.g. a payment dispute that got resolved). */
 export async function POST(req: NextRequest) {
   if (!(await isAuthorized(req))) return unauthorized()
 
@@ -21,13 +22,12 @@ export async function POST(req: NextRequest) {
   if (!key) return fail('key is required')
 
   const sql = getDb()
-  const result = await sql`
-    UPDATE licenses SET is_active = FALSE WHERE key = ${key}
-    RETURNING id
-  `
+  const [license] = await sql`SELECT * FROM licenses WHERE key = ${key} LIMIT 1`
+  if (!license) return fail('License not found', 404)
+  if (license.is_active) return fail('License is already active')
 
-  if (result.length === 0) return fail('Key not found', 404)
+  await sql`UPDATE licenses SET is_active = TRUE WHERE key = ${key}`
+  await logAdminAction('license_reactivate', key, null, clientIp(req.headers))
 
-  await logAdminAction('license_deactivate', key, null, clientIp(req.headers))
-  return ok({ success: true, message: 'License deactivated' })
+  return ok({ success: true, message: 'License reactivated' })
 }

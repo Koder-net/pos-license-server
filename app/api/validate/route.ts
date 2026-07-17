@@ -60,9 +60,18 @@ export async function POST(req: NextRequest) {
     }, { headers: CORS })
   }
 
+  // Remote kill-switch. Reported alongside a *valid* license so the client
+  // keeps its key and simply shows the lock screen — unlocking restores the
+  // app without the customer having to re-enter anything.
+  const [inst] = await sql`
+    SELECT is_locked, lock_reason FROM installations WHERE machine_id = ${machine_id} LIMIT 1
+  `
+
   return NextResponse.json({
     valid: true,
     type: license.type,
     expires_at: license.expires_at ?? null,
+    locked: inst?.is_locked ?? false,
+    lock_reason: inst?.lock_reason ?? null,
   }, { headers: CORS })
 }
