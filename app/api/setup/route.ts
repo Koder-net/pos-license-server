@@ -96,7 +96,10 @@ export async function POST(req: NextRequest) {
     CREATE TABLE IF NOT EXISTS pos_users (
       id             SERIAL PRIMARY KEY,
       machine_id     VARCHAR(255) NOT NULL,
-      pos_user_id    INT,
+      -- TEXT, not INT: the POS declares users.id as INTEGER but SQLite is
+      -- dynamically typed and real installs store UUID strings there. Never
+      -- narrow this — a bad cast 500s the heartbeat and stalls remote control.
+      pos_user_id    VARCHAR(64),
       username       VARCHAR(255),
       name           VARCHAR(255),
       role           VARCHAR(50),
@@ -112,7 +115,7 @@ export async function POST(req: NextRequest) {
     CREATE TABLE IF NOT EXISTS pos_branches (
       id            SERIAL PRIMARY KEY,
       machine_id    VARCHAR(255) NOT NULL,
-      pos_branch_id INT,
+      pos_branch_id VARCHAR(64), -- TEXT for the same reason as pos_users.pos_user_id
       name          VARCHAR(255),
       address       TEXT,
       phone         VARCHAR(50),
@@ -121,6 +124,25 @@ export async function POST(req: NextRequest) {
       synced_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (machine_id, pos_branch_id)
     )
+  `
+
+  // Widen pos_user_id / pos_branch_id on deployments created before these were
+  // TEXT. They shipped as INT, which rejected the UUID ids real installs send:
+  // the heartbeat 500'd mid-way and remote commands were never delivered.
+  // ALTER ... TYPE is a no-op-safe re-run (already VARCHAR → unchanged).
+  await sql`
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'pos_users' AND column_name = 'pos_user_id'
+                   AND data_type <> 'character varying') THEN
+        ALTER TABLE pos_users ALTER COLUMN pos_user_id TYPE VARCHAR(64) USING pos_user_id::text;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'pos_branches' AND column_name = 'pos_branch_id'
+                   AND data_type <> 'character varying') THEN
+        ALTER TABLE pos_branches ALTER COLUMN pos_branch_id TYPE VARCHAR(64) USING pos_branch_id::text;
+      END IF;
+    END $$
   `
 
   // ─── Daily sales rollup per installation (powers fleet charts) ──────────────

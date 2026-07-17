@@ -76,7 +76,7 @@ interface Stats {
 }
 
 interface PosUser {
-  pos_user_id: number
+  pos_user_id: string
   username: string | null
   name: string | null
   role: string
@@ -85,7 +85,7 @@ interface PosUser {
 }
 
 interface PosBranch {
-  pos_branch_id: number
+  pos_branch_id: string
   name: string | null
   address: string | null
   phone: string | null

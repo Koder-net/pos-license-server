@@ -35,3 +35,14 @@ routes, API surface, and the remote-control design.
 - Heartbeat upserts `COALESCE` health/stats fields so a client-side probe failure (null)
   preserves the last known value; a real `0` still overwrites. Don't switch these back to
   bare `EXCLUDED.x` — it silently wipes good data.
+- **Telemetry ingest must never gate command delivery.** In `/api/heartbeat`, ingest runs
+  inside a `try/catch` and command delivery comes after it. This is not defensive padding:
+  unexpected client data once threw mid-ingest and aborted the request before delivery, so
+  every remote command sat `pending` forever while the panel still showed the device online
+  and healthy — each `sql` call auto-commits separately, so `last_seen` kept updating.
+- **POS row ids are TEXT, not INT.** The POS declares `users.id`/`branches.id` as
+  `INTEGER PRIMARY KEY`, but SQLite is dynamically typed and real installs store **UUID
+  strings** there. `pos_users.pos_user_id` / `pos_branches.pos_branch_id` are `VARCHAR(64)`;
+  normalise with `rowId()` and cast prunes with `::text[]`. Never narrow these back to INT.
+- **`NOT (x = ANY('{}'))` is TRUE for every row.** Any prune driven by a client-supplied id
+  list must be skipped when that list is empty, or it wipes all of that machine's rows.

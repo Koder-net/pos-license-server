@@ -7,7 +7,7 @@ export async function OPTIONS() {
 }
 
 interface PosUser {
-  id?: number
+  id?: string | number
   username?: string
   name?: string
   role?: string
@@ -16,7 +16,7 @@ interface PosUser {
 }
 
 interface PosBranch {
-  id?: number
+  id?: string | number
   name?: string
   address?: string
   phone?: string
@@ -32,26 +32,25 @@ const num = (v: unknown): number | null => {
 const bool = (v: unknown): boolean => v === true || v === 1 || v === '1'
 
 /**
- * Heartbeat — called by the POS on startup and every 5 minutes.
- *
- * Ingests health/storage/users/branches/sales telemetry, then returns any
- * pending remote commands. This piggyback is what makes remote control work
- * without websockets (Vercel serverless has no persistent connections).
+ * POS row ids arrive as either an int (older installs) or a UUID string, so
+ * they're stored as text. Returns null for anything unusable, which callers
+ * skip — a row with a null id can't be upserted or pruned coherently.
  */
-export async function POST(req: NextRequest) {
-  let body: Record<string, unknown>
-  try {
-    body = await req.json()
-  } catch {
-    return fail('Invalid body')
-  }
+const rowId = (v: unknown): string | null => {
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v)
+  if (typeof v === 'string' && v.trim() !== '') return v.trim().slice(0, 64)
+  return null
+}
 
-  const machine_id = body.machine_id as string
-  if (!machine_id) return fail('machine_id required')
+type Sql = ReturnType<typeof getDb>
 
-  const sql = getDb()
-  const ip = clientIp(req.headers)
-
+/** Best-effort ingest of health/storage/users/branches/sales telemetry. */
+async function ingestTelemetry(
+  sql: Sql,
+  machine_id: string,
+  body: Record<string, unknown>,
+  ip: string | null
+) {
   const health = (body.health ?? {}) as Record<string, unknown>
   const stats = (body.stats ?? {}) as Record<string, unknown>
   const users = Array.isArray(body.users) ? (body.users as PosUser[]) : []
@@ -111,9 +110,11 @@ export async function POST(req: NextRequest) {
 
   // ── POS users (upsert; stale rows for deleted users are pruned below)
   for (const u of users) {
+    const id = rowId(u.id)
+    if (!id) continue
     await sql`
       INSERT INTO pos_users (machine_id, pos_user_id, username, name, role, active, last_login_at, synced_at)
-      VALUES (${machine_id}, ${u.id ?? null}, ${u.username ?? null}, ${u.name ?? null},
+      VALUES (${machine_id}, ${id}, ${u.username ?? null}, ${u.name ?? null},
               ${u.role ?? null}, ${bool(u.active)}, ${u.last_login_at ?? null}, NOW())
       ON CONFLICT (machine_id, pos_user_id) DO UPDATE SET
         username      = EXCLUDED.username,
@@ -124,20 +125,25 @@ export async function POST(req: NextRequest) {
         synced_at     = NOW()
     `
   }
-  if (users.length > 0) {
-    // Drop users that no longer exist on the client
-    const keep = users.map((u) => u.id).filter((id): id is number => typeof id === 'number')
-    await sql`
-      DELETE FROM pos_users
-      WHERE machine_id = ${machine_id} AND NOT (pos_user_id = ANY(${keep}::int[]))
-    `
+  {
+    // Drop users that no longer exist on the client. Guard on a non-empty keep
+    // list: `NOT (x = ANY('{}'))` is TRUE for every row and would wipe the table.
+    const keep = users.map((u) => rowId(u.id)).filter((id): id is string => id !== null)
+    if (keep.length > 0) {
+      await sql`
+        DELETE FROM pos_users
+        WHERE machine_id = ${machine_id} AND NOT (pos_user_id = ANY(${keep}::text[]))
+      `
+    }
   }
 
   // ── Branches
   for (const b of branches) {
+    const id = rowId(b.id)
+    if (!id) continue
     await sql`
       INSERT INTO pos_branches (machine_id, pos_branch_id, name, address, phone, is_default, active, synced_at)
-      VALUES (${machine_id}, ${b.id ?? null}, ${b.name ?? null}, ${b.address ?? null},
+      VALUES (${machine_id}, ${id}, ${b.name ?? null}, ${b.address ?? null},
               ${b.phone ?? null}, ${bool(b.is_default)}, ${bool(b.active)}, NOW())
       ON CONFLICT (machine_id, pos_branch_id) DO UPDATE SET
         name       = EXCLUDED.name,
@@ -148,12 +154,14 @@ export async function POST(req: NextRequest) {
         synced_at  = NOW()
     `
   }
-  if (branches.length > 0) {
-    const keep = branches.map((b) => b.id).filter((id): id is number => typeof id === 'number')
-    await sql`
-      DELETE FROM pos_branches
-      WHERE machine_id = ${machine_id} AND NOT (pos_branch_id = ANY(${keep}::int[]))
-    `
+  {
+    const keep = branches.map((b) => rowId(b.id)).filter((id): id is string => id !== null)
+    if (keep.length > 0) {
+      await sql`
+        DELETE FROM pos_branches
+        WHERE machine_id = ${machine_id} AND NOT (pos_branch_id = ANY(${keep}::text[]))
+      `
+    }
   }
 
   // ── Daily sales rollup (client sends a trailing window, e.g. last 14 days)
@@ -168,6 +176,37 @@ export async function POST(req: NextRequest) {
         revenue     = EXCLUDED.revenue,
         updated_at  = NOW()
     `
+  }
+}
+
+/**
+ * Heartbeat — called by the POS on startup and every 5 minutes.
+ *
+ * Ingests telemetry, then returns any pending remote commands. This piggyback
+ * is what makes remote control work without websockets (Vercel serverless has
+ * no persistent connections).
+ */
+export async function POST(req: NextRequest) {
+  let body: Record<string, unknown>
+  try {
+    body = await req.json()
+  } catch {
+    return fail('Invalid body')
+  }
+
+  const machine_id = body.machine_id as string
+  if (!machine_id) return fail('machine_id required')
+
+  const sql = getDb()
+
+  // Telemetry is best-effort and MUST NOT gate remote control. Unexpected client
+  // data used to throw mid-ingest and abort the request before the command
+  // delivery below, leaving the fleet uncontrollable while looking healthy
+  // (`last_seen` kept updating). Never move command delivery behind this.
+  try {
+    await ingestTelemetry(sql, machine_id, body, clientIp(req.headers))
+  } catch (e) {
+    console.error('[heartbeat] telemetry ingest failed for', machine_id, e)
   }
 
   // ── Pending commands → deliver
