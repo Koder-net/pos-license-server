@@ -20,9 +20,9 @@ function computeExpiresAt(type: string): Date | null {
 }
 
 export async function POST(req: NextRequest) {
-  let key: string, machine_id: string
+  let key: string, machine_id: string, legacy_machine_id: string | undefined
   try {
-    ;({ key, machine_id } = await req.json())
+    ;({ key, machine_id, legacy_machine_id } = await req.json())
   } catch {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400, headers: CORS })
   }
@@ -46,6 +46,19 @@ export async function POST(req: NextRequest) {
 
   // Reinstall on same machine — return existing expiry
   if (license.machine_id === machine_id) {
+    return NextResponse.json({
+      success: true,
+      message: 'Already activated on this machine',
+      type: license.type,
+      expires_at: license.expires_at ?? null,
+    }, { headers: CORS })
+  }
+
+  // Same machine, but it's still bound to the pre-migration MAC-based
+  // fingerprint — rebind to the new stable ID instead of treating this as a
+  // different computer.
+  if (legacy_machine_id && license.machine_id === legacy_machine_id) {
+    await sql`UPDATE licenses SET machine_id = ${machine_id} WHERE key = ${key} AND machine_id = ${legacy_machine_id}`
     return NextResponse.json({
       success: true,
       message: 'Already activated on this machine',

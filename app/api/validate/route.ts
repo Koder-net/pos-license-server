@@ -12,9 +12,9 @@ export async function OPTIONS() {
 }
 
 export async function POST(req: NextRequest) {
-  let key: string, machine_id: string
+  let key: string, machine_id: string, legacy_machine_id: string | undefined
   try {
-    ;({ key, machine_id } = await req.json())
+    ;({ key, machine_id, legacy_machine_id } = await req.json())
   } catch {
     return NextResponse.json({ valid: false, error: 'Invalid request body' }, { status: 400, headers: CORS })
   }
@@ -37,7 +37,17 @@ export async function POST(req: NextRequest) {
   }
 
   if (license.machine_id !== machine_id) {
-    return NextResponse.json({ valid: false, error: 'License is registered to a different machine' }, { headers: CORS })
+    // The client's machine fingerprint changed (e.g. it was upgraded from the
+    // old MAC-address-based fingerprint to a stable OS-level ID). If the
+    // license is still bound to the previous fingerprint this app instance
+    // reports, it's the same physical machine — rebind transparently instead
+    // of locking the user out.
+    if (legacy_machine_id && license.machine_id === legacy_machine_id) {
+      await sql`UPDATE licenses SET machine_id = ${machine_id} WHERE key = ${key} AND machine_id = ${legacy_machine_id}`
+      license.machine_id = machine_id
+    } else {
+      return NextResponse.json({ valid: false, error: 'License is registered to a different machine' }, { headers: CORS })
+    }
   }
 
   // Subscription expired
